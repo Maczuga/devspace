@@ -13,33 +13,19 @@ export interface ChatGptToolGlobals {
 
 export function decodeToolResult(result: CallToolResult): DecodedToolResult {
   const structured = asRecord(result.structuredContent);
-  const metaCard = cardFields(asRecord(asRecord(result._meta)?.card));
 
   if (structured) {
     const workspaceId = stringField(structured.workspaceId);
     const reviewRef = stringField(structured.reviewRef);
     if (workspaceId && reviewRef) {
-      if (isCompleteReviewCard(metaCard)) {
-        return {
-          kind: "card",
-          card: {
-            ...metaCard,
-            tool: "show_changes",
-            workspaceId,
-          },
-        };
-      }
+      const reviewCard = reviewCardFromStructured(structured, workspaceId);
+      if (reviewCard) return { kind: "card", card: reviewCard };
       return { kind: "review-reference", workspaceId, reviewRef };
     }
 
     if (typeof structured.patch === "string" && Array.isArray(structured.files)) {
-      const legacyCard = cardFields({
-        ...structured,
-        payload: { patch: structured.patch },
-      });
-      if (legacyCard) {
-        return { kind: "card", card: { ...legacyCard, tool: "show_changes" } };
-      }
+      const legacyCard = reviewCardFromStructured(structured);
+      if (legacyCard) return { kind: "card", card: legacyCard };
     }
 
     const root = stringField(structured.root);
@@ -50,27 +36,34 @@ export function decodeToolResult(result: CallToolResult): DecodedToolResult {
         kind: "card",
         card: {
           ...structuredCard,
-          ...metaCard,
           tool: "open_workspace",
           workspaceId,
           root,
           mode,
-          summary: metaCard?.summary ?? workspaceSummary(structuredCard),
+          summary: workspaceSummary(structuredCard),
         },
       };
     }
   }
 
-  // Existing conversations created before reviewRef was added can still render
-  // while the host supplies their live MCP Apps result metadata.
-  if (metaCard?.workspaceId && (metaCard.files?.length || metaCard.payload?.patch)) {
-    return { kind: "card", card: { ...metaCard, tool: "show_changes" } };
-  }
-  if (metaCard?.workspaceId && metaCard.root && metaCard.mode) {
-    return { kind: "card", card: { ...metaCard, tool: "open_workspace" } };
-  }
-
   return { kind: "invalid" };
+}
+
+function reviewCardFromStructured(
+  structured: Record<string, unknown>,
+  workspaceId?: string,
+): ToolResultCard | undefined {
+  const card = cardFields({
+    ...structured,
+    payload: { patch: structured.patch },
+  });
+  if (!isCompleteReviewCard(card)) return undefined;
+
+  return {
+    ...card,
+    tool: "show_changes",
+    ...(workspaceId ? { workspaceId } : {}),
+  };
 }
 
 function isCompleteReviewCard(
@@ -93,26 +86,18 @@ export function toolResultFromChatGptGlobals(
 ): CallToolResult | undefined {
   if (!globals) return undefined;
 
-  const responseMetadata = asRecord(globals.toolResponseMetadata);
   const metadataResult = mcpToolResult(globals.toolResponseMetadata);
   const structuredContent = asRecord(globals.toolOutput)
     ?? asRecord(metadataResult?.structuredContent);
-  const resultMeta = asRecord(metadataResult?._meta)
-    ?? directResultMeta(responseMetadata);
-  if (!metadataResult && !structuredContent && !resultMeta) return undefined;
+  if (!metadataResult && !structuredContent) return undefined;
+
+  const { _meta: _ignoredMeta, structuredContent: _ignoredStructured, ...rest } = metadataResult
+    ?? { content: [] };
 
   return {
-    ...(metadataResult ?? { content: [] }),
+    ...rest,
     ...(structuredContent ? { structuredContent } : {}),
-    ...(resultMeta ? { _meta: resultMeta } : {}),
   } as CallToolResult;
-}
-
-function directResultMeta(
-  metadata: Record<string, unknown> | undefined,
-): Record<string, unknown> | undefined {
-  if (!metadata) return undefined;
-  return "card" in metadata ? metadata : undefined;
 }
 
 function mcpToolResult(value: unknown): CallToolResult | undefined {

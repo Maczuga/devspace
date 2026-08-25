@@ -74,7 +74,7 @@ test("open_workspace reports aggregate review availability", async (t) => {
   assert.deepEqual(gitReview, { available: true });
 });
 
-test("show_changes keeps model output compact and preserves the rich review card", async (t) => {
+test("show_changes keeps model output compact and restores rich review data on demand", async (t) => {
   const context = await fixture(t, { git: true, uiEnabled: false });
   const opened = structuredContent(
     await callOpen(context.client, context.project, "review"),
@@ -88,7 +88,7 @@ test("show_changes keeps model output compact and preserves the rich review card
     arguments: { workspaceId },
   });
   const structured = structuredContent(review);
-  assert.equal((review._meta as Record<string, unknown> | undefined)?.tool, undefined);
+  assert.equal(review._meta, undefined);
 
   assert.equal(structured.workspaceId, workspaceId);
   assert.match(structured.reviewRef as string, /^[0-9a-f]{40,64}$/);
@@ -97,13 +97,17 @@ test("show_changes keeps model output compact and preserves the rich review card
   assert.equal("files" in structured, false);
   assert.equal("patch" in structured, false);
 
-  const card = responseCard(review);
-  assert.deepEqual(card.summary, {
+  const restored = structuredContent(await context.client.callTool({
+    name: "show_changes",
+    arguments: { workspaceId },
+    _meta: { "devspace/reviewRef": structured.reviewRef },
+  } as Parameters<Client["callTool"]>[0]));
+  assert.deepEqual(restored.summary, {
     files: 1,
     additions: 1,
     removals: 1,
   });
-  assert.deepEqual(card.files, [
+  assert.deepEqual(restored.files, [
     {
       path: "README.md",
       type: "change",
@@ -111,19 +115,18 @@ test("show_changes keeps model output compact and preserves the rich review card
       removals: 1,
     },
   ]);
-  assert.match(
-    ((card.payload as { patch?: string } | undefined)?.patch) ?? "",
-    /-hello\n\+goodbye/,
-  );
+  assert.match(restored.patch as string, /-hello\n\+goodbye/);
 
   const tools = await context.client.listTools();
-  const outputProperties = tools.tools.find((tool) => tool.name === "show_changes")
-    ?.outputSchema?.properties;
+  const showChangesSchema = tools.tools.find((tool) => tool.name === "show_changes")
+    ?.outputSchema;
+  const outputProperties = showChangesSchema?.properties;
   assert.ok(outputProperties && "workspaceId" in outputProperties);
   assert.ok(outputProperties && "reviewRef" in outputProperties);
   assert.equal(outputProperties && "summary" in outputProperties, false);
   assert.equal(outputProperties && "files" in outputProperties, false);
   assert.equal(outputProperties && "patch" in outputProperties, false);
+  assert.notEqual(showChangesSchema?.additionalProperties, false);
   const inputProperties = tools.tools.find((tool) => tool.name === "show_changes")
     ?.inputSchema?.properties;
   assert.equal(inputProperties && "reviewRef" in inputProperties, false);
@@ -151,30 +154,31 @@ test("show_changes can reopen a historical review without advancing the checkpoi
     _meta: { "devspace/reviewRef": reviewRef },
   } as Parameters<Client["callTool"]>[0]);
   assert.equal(structuredContent(reopened).reviewRef, reviewRef);
-  assert.match(
-    (((responseCard(reopened).payload as { patch?: string } | undefined)?.patch) ?? ""),
-    /\+first/,
-  );
+  assert.match(structuredContent(reopened).patch as string, /\+first/);
 
   const current = await context.client.callTool({
     name: "show_changes",
     arguments: { workspaceId },
   });
-  assert.match(
-    (((responseCard(current).payload as { patch?: string } | undefined)?.patch) ?? ""),
-    /-first\n\+second/,
-  );
+  const currentStructured = structuredContent(current);
+  assert.equal("patch" in currentStructured, false);
+  const currentRestored = structuredContent(await context.client.callTool({
+    name: "show_changes",
+    arguments: { workspaceId },
+    _meta: { "devspace/reviewRef": currentStructured.reviewRef },
+  } as Parameters<Client["callTool"]>[0]));
+  assert.match(currentRestored.patch as string, /-first\n\+second/);
 });
 
-test("open_workspace keeps lifecycle flags out of model output and preserves complete card metadata", async (t) => {
+test("open_workspace keeps lifecycle flags and card metadata out of its result", async (t) => {
   const providerNote = "available";
   const context = await fixture(t, {
     localAgentProviders: [{ name: "codex", available: true, note: providerNote }],
   });
   const first = await callOpen(context.client, context.project, "chat-1");
   const repeated = await callOpen(context.client, context.project, "chat-1");
-  assert.equal((first._meta as Record<string, unknown> | undefined)?.tool, undefined);
-  assert.equal((repeated._meta as Record<string, unknown> | undefined)?.tool, undefined);
+  assert.equal(first._meta, undefined);
+  assert.equal(repeated._meta, undefined);
 
   const tools = await context.client.listTools();
   const openTool = tools.tools.find((tool) => tool.name === "open_workspace");
@@ -214,19 +218,9 @@ test("open_workspace keeps lifecycle flags out of model output and preserves com
   assert.equal(repeatedStructured.skillDiagnostics, undefined);
   assert.equal("workspaceReused" in repeatedStructured, false);
   assert.equal("includeBootstrapContext" in repeatedStructured, false);
-
-  const card = responseCard(repeated);
-  assert.equal(card.workspaceReused, true);
-  assert.equal(card.includeBootstrapContext, false);
-  assert.ok(Array.isArray(card.agentsFiles));
-  assert.ok(Array.isArray(card.availableAgentsFiles));
-  assert.ok(Array.isArray(card.skills));
-  assert.ok(Array.isArray(card.agentProviders));
-  assert.equal(
-    (card.agentProviders as Array<Record<string, unknown>>)[0]?.note,
-    providerNote,
-  );
-  assert.ok(Array.isArray(card.agents));
+  assert.equal(repeatedStructured.root, context.project);
+  assert.equal(repeatedStructured.mode, "checkout");
+  assert.match(repeatedStructured.instruction as string, /already open/i);
 });
 
 test("open_workspace refreshes provider availability for each catalog", async (t) => {
@@ -530,12 +524,4 @@ function responseText(result: Awaited<ReturnType<Client["callTool"]>>): string {
   assert.equal(first?.type, "text");
   assert.equal(typeof first?.text, "string");
   return first?.text as string;
-}
-
-function responseCard(result: Awaited<ReturnType<Client["callTool"]>>): Record<string, unknown> {
-  const metadata = result._meta;
-  assert.ok(metadata && typeof metadata === "object");
-  const card = (metadata as Record<string, unknown>).card;
-  assert.ok(card && typeof card === "object");
-  return card as Record<string, unknown>;
 }

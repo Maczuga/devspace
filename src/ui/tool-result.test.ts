@@ -28,21 +28,16 @@ test("workspace cards can be rebuilt from structured content without result meta
   assert.equal(decoded.card.summary?.agentsFiles, 1);
 });
 
-test("review results use rich metadata when the host provides it", () => {
+test("review hydration renders from rich structured content", () => {
   const decoded = decodeToolResult({
     content: [],
     structuredContent: {
       workspaceId: "ws_1",
       reviewRef: "a".repeat(40),
       result: "Changed 1 file (+1 -0).",
-    },
-    _meta: {
-      card: {
-        workspaceId: "ws_1",
-        summary: { files: 1, additions: 1, removals: 0 },
-        files: [{ path: "new.txt", type: "new", additions: 1, removals: 0 }],
-        payload: { patch: "diff --git ..." },
-      },
+      summary: { files: 1, additions: 1, removals: 0 },
+      files: [{ path: "new.txt", type: "new", additions: 1, removals: 0 }],
+      patch: "diff --git ...",
     },
   });
 
@@ -53,7 +48,7 @@ test("review results use rich metadata when the host provides it", () => {
   assert.equal(decoded.card.payload?.patch, "diff --git ...");
 });
 
-test("review structured content becomes a reload reference when metadata is missing", () => {
+test("compact review structured content becomes a recovery reference", () => {
   const decoded = decodeToolResult({
     content: [],
     structuredContent: {
@@ -70,7 +65,7 @@ test("review structured content becomes a reload reference when metadata is miss
   });
 });
 
-test("incomplete review metadata falls back to the durable review reference", () => {
+test("result metadata is ignored for review rendering", () => {
   const decoded = decodeToolResult({
     content: [],
     structuredContent: {
@@ -78,7 +73,14 @@ test("incomplete review metadata falls back to the durable review reference", ()
       reviewRef: "e".repeat(40),
       result: "Changed 1 file (+1 -0).",
     },
-    _meta: { card: {} },
+    _meta: {
+      card: {
+        workspaceId: "ws_1",
+        summary: { files: 1, additions: 1, removals: 0 },
+        files: [{ path: "new.txt", type: "new", additions: 1, removals: 0 }],
+        payload: { patch: "should not be used" },
+      },
+    },
   });
 
   assert.deepEqual(decoded, {
@@ -106,7 +108,7 @@ test("older review results can reload from their structured patch", () => {
   assert.equal(decoded.card.payload?.patch, "diff --git a/new.txt b/new.txt");
 });
 
-test("ChatGPT globals restore structured output and hidden MCP result metadata together", () => {
+test("ChatGPT globals restore tool output without carrying result metadata", () => {
   const fullResult: CallToolResult = {
     content: [{ type: "text", text: "Changed 1 file." }],
     structuredContent: { stale: true },
@@ -128,28 +130,28 @@ test("ChatGPT globals restore structured output and hidden MCP result metadata t
     reviewRef: "c".repeat(40),
     result: "Changed 1 file.",
   });
-  assert.deepEqual(restored?._meta, fullResult._meta);
+  assert.equal(restored?._meta, undefined);
 });
 
-test("ChatGPT globals also accept result metadata exposed directly", () => {
+test("ChatGPT globals can recover structured output from the MCP result envelope", () => {
   const restored = toolResultFromChatGptGlobals({
-    toolOutput: {
-      workspaceId: "ws_1",
-      reviewRef: "d".repeat(40),
-      result: "Changed 1 file.",
-    },
     toolResponseMetadata: {
-      card: {
-        workspaceId: "ws_1",
-        summary: { files: 1, additions: 1, removals: 0 },
+      mcp_tool_result: {
+        content: [{ type: "text", text: "Changed 1 file." }],
+        structuredContent: {
+          workspaceId: "ws_1",
+          reviewRef: "d".repeat(40),
+          result: "Changed 1 file.",
+        },
+        _meta: { card: { ignored: true } },
       },
     },
   });
 
-  assert.deepEqual(restored?._meta, {
-    card: {
-      workspaceId: "ws_1",
-      summary: { files: 1, additions: 1, removals: 0 },
-    },
+  assert.deepEqual(restored?.structuredContent, {
+    workspaceId: "ws_1",
+    reviewRef: "d".repeat(40),
+    result: "Changed 1 file.",
   });
+  assert.equal(restored?._meta, undefined);
 });
