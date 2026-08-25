@@ -252,7 +252,7 @@ metadata and only show text results; `show_changes` remains available there.
 If both cards are missing in ChatGPT, confirm that `ui.enabled` is not `false`
 in `~/.devspace/config.jsonc` and reconnect the MCP server.
 
-Historical `show_changes` cards use the `reviewRef` in their structured result
-to recover the exact Git-backed review when a host reloads the app without its
-original result metadata. `open_workspace` can rebuild its card directly from
+`show_changes` cards use the `reviewRef` in their structured result to recover
+the exact Git-backed review. That same recovery path is used for the initial
+render and after a host reload. `open_workspace` rebuilds its card directly from
 its structured result.

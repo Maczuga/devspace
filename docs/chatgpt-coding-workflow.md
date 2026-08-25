@@ -193,11 +193,11 @@ the review point automatically. Reusing a workspace does not change this
 workflow.
 
 The model-facing result stays compact: DevSpace returns the workspace ID, a
-Git-backed `reviewRef`, and the summary text. MCP Apps hosts receive the full
-file list and patch in result metadata for immediate rendering. If a host later
-restores only the structured result, the review card can reopen that exact
-`reviewRef` from DevSpace's Git review history without advancing the current
-review point.
+Git-backed `reviewRef`, and the summary text. The widget uses that structured
+result to reopen the exact review from DevSpace's Git review history and render
+the file list and patch without exposing them to the model. The same path is
+used for the initial render and after a host reload, and reopening a review does
+not advance the current review point.
 
 For local inspection, run `devspace show-changes <review-ref>`. Add `--json` to
 include the parsed summary, file list, and patch.
