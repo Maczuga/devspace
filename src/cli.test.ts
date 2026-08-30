@@ -31,6 +31,38 @@ for (const flag of ["-v", "--version"]) {
   assert.equal(output, packageJson.version);
 }
 
+const configRoot = mkdtempSync(join(tmpdir(), "devspace-cli-config-test-"));
+try {
+  const configEnv = writeTestDevspaceConfig(join(configRoot, ".devspace"));
+  const firstResource = "https://api.openai.com/v1/mcp/tunnel_first";
+  const secondResource = "https://gateway.example.com/devspace/mcp";
+
+  execFileSync(
+    "node",
+    [
+      "--import",
+      "tsx",
+      "src/cli.ts",
+      "config",
+      "set",
+      "oauth.allowedResourceUrls",
+      firstResource,
+      secondResource,
+    ],
+    { env: { ...process.env, ...configEnv } },
+  );
+  assert.deepEqual(loadConfig(configEnv).oauth.allowedResourceUrls, [firstResource, secondResource]);
+
+  execFileSync(
+    "node",
+    ["--import", "tsx", "src/cli.ts", "config", "set", "oauth.allowedResourceUrls", "null"],
+    { env: { ...process.env, ...configEnv } },
+  );
+  assert.deepEqual(loadConfig(configEnv).oauth.allowedResourceUrls, []);
+} finally {
+  rmSync(configRoot, { recursive: true, force: true });
+}
+
 const root = mkdtempSync(join(tmpdir(), "devspace-cli-agents-test-"));
 try {
   const configDir = join(root, ".devspace");

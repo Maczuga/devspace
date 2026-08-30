@@ -68,6 +68,7 @@ Run `devspace init` to create both files. `devspace config set publicBaseUrl
     "accessTokenTtlSeconds": 3600,
     "refreshTokenTtlSeconds": 2592000,
     "scopes": ["devspace"],
+    "allowedResourceUrls": [],
     "allowedRedirectHosts": ["chatgpt.com", "localhost", "127.0.0.1"],
   },
 }
@@ -76,6 +77,35 @@ Run `devspace init` to create both files. `devspace config set publicBaseUrl
 Omitted sections and keys use the defaults shown above. An empty
 `workspaces.allowedRoots` uses the current working directory. Unknown keys are
 rejected so spelling mistakes cannot silently alter behavior.
+
+### Split OAuth and MCP resource URLs
+
+By default, OAuth tokens are accepted for the MCP resource derived from
+`server.publicBaseUrl`, for example `https://devspace.example.com/mcp`.
+
+Some deployments intentionally use a different externally visible MCP resource.
+OpenAI Secure MCP Tunnel is one example: DevSpace's browser-facing OAuth server
+can stay at `https://devspace.example.com` while ChatGPT reaches MCP through an
+OpenAI-hosted tunnel resource.
+
+Add those MCP resource URLs explicitly:
+
+```bash
+devspace config set oauth.allowedResourceUrls https://api.openai.com/v1/mcp/tunnel_...
+```
+
+or configure more than one:
+
+```bash
+devspace config set oauth.allowedResourceUrls \
+  https://api.openai.com/v1/mcp/tunnel_... \
+  https://gateway.example.com/devspace/mcp
+```
+
+`server.publicBaseUrl` remains the public DevSpace/OAuth URL and its `/mcp`
+resource remains accepted. `oauth.allowedResourceUrls` only adds explicitly
+trusted MCP resource identities; use the exact tunnel or gateway resource path
+rather than a broad gateway origin.
 
 ## Tool modes and UI
 

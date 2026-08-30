@@ -51,8 +51,8 @@ DEVSPACE_OAUTH_OWNER_TOKEN="$(openssl rand -base64 32)"
 
 ## Public URL And Host Allowlist
 
-DevSpace needs `server.publicBaseUrl` in `config.jsonc` so MCP clients can
-discover OAuth metadata and connect to the correct resource.
+DevSpace needs `server.publicBaseUrl` in `config.jsonc` for its public OAuth and
+direct MCP identity.
 
 The value should be the origin only:
 
@@ -61,6 +61,11 @@ https://your-tunnel-host.example.com
 ```
 
 Do not include `/mcp` in `server.publicBaseUrl`.
+
+When MCP traffic reaches DevSpace through a different external resource, keep
+`server.publicBaseUrl` pointed at the browser-reachable DevSpace/OAuth origin and
+add the exact MCP resource to `oauth.allowedResourceUrls`. DevSpace continues to
+accept its normal `${publicBaseUrl}/mcp` resource as well.
 
 By default, DevSpace derives allowed Host headers from the local host and public
 URL. Put `"*"` in `server.allowedHosts` only for intentional local debugging.
@@ -72,6 +77,12 @@ DevSpace does not manage tunnels. Your tunnel or reverse proxy should point to:
 ```text
 http://127.0.0.1:7676
 ```
+
+OpenAI Secure MCP Tunnel is different from a normal public reverse proxy: MCP
+traffic can stay private and flow through `tunnel-client`, while DevSpace's OAuth
+authorization endpoint remains directly browser-reachable. Configure the exact
+OpenAI tunnel MCP resource in `oauth.allowedResourceUrls`; do not allowlist a
+whole gateway domain.
 
 Prefer adding Cloudflare Access, Tailscale identity controls, or equivalent
 protection in front of public tunnels. DevSpace OAuth still protects the MCP

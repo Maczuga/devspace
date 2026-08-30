@@ -89,6 +89,22 @@ Configure the MCP client with the full MCP endpoint:
 https://your-tunnel-host.example.com/mcp
 ```
 
+### OpenAI Secure MCP Tunnel
+
+For OpenAI Secure MCP Tunnel, keep `server.publicBaseUrl` set to the public HTTPS
+origin that exposes DevSpace's OAuth endpoints. Point `tunnel-client` at the
+private DevSpace MCP endpoint, usually `http://127.0.0.1:7676/mcp`, and add the
+exact tunnel-facing MCP resource that ChatGPT uses:
+
+```bash
+npx @waishnav/devspace config set oauth.allowedResourceUrls \
+  https://api.openai.com/v1/mcp/tunnel_...
+```
+
+Use the exact resource URL from your OpenAI tunnel setup. DevSpace validates that
+resource during authorization, token exchange and refresh, and every `/mcp`
+bearer-token request.
+
 A Coding Agents-only setup skips this section.
 
 ## Start The Server

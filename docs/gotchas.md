@@ -81,6 +81,24 @@ For a stable URL:
 npx @waishnav/devspace config set publicBaseUrl https://devspace.example.com
 ```
 
+## OAuth Resource Rejected Behind A Secure Tunnel
+
+If OAuth is public at one origin but ChatGPT reaches MCP through another resource,
+DevSpace can reject the OAuth request with `Invalid or missing OAuth resource` or
+later return `401 Unauthorized`.
+
+Keep `publicBaseUrl` on the public DevSpace/OAuth origin and add the exact external
+MCP resource:
+
+```bash
+npx @waishnav/devspace config set oauth.allowedResourceUrls \
+  https://api.openai.com/v1/mcp/tunnel_...
+```
+
+This is the expected setup for OpenAI Secure MCP Tunnel and similar split-origin
+gateways. Do not configure only `https://api.openai.com`; use the full resource
+path assigned to your tunnel.
+
 ## Host Header Or 403 Problems
 
 DevSpace derives allowed hosts from the configured public URL.

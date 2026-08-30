@@ -192,18 +192,19 @@ async function runInit({ force }: { force: boolean }): Promise<void> {
     if (useChatGpt) {
       prompts.note(
         [
-          `Point your HTTPS tunnel or reverse proxy to http://127.0.0.1:${port}.`,
-          "Paste its public URL below.",
+          `Expose DevSpace's OAuth endpoints from http://127.0.0.1:${port} over HTTPS.`,
+          "For a normal tunnel or reverse proxy, paste that public URL below.",
+          "Secure MCP Tunnel users can configure its MCP resource URL separately after setup.",
           "",
-          "Example: https://your-tunnel-host.example.com",
+          "Example: https://devspace.example.com",
         ].join("\n"),
         "Connect ChatGPT",
       );
       publicBaseUrl = normalizePublicBaseUrl(await textPrompt({
         message: files.config.server.publicBaseUrl
-          ? `What public URL will ChatGPT connect to? Press Enter to keep ${files.config.server.publicBaseUrl}`
-          : "What public URL will ChatGPT connect to?",
-        placeholder: files.config.server.publicBaseUrl ?? "https://your-tunnel-host.example.com",
+          ? `What public URL exposes DevSpace? Press Enter to keep ${files.config.server.publicBaseUrl}`
+          : "What public URL exposes DevSpace?",
+        placeholder: files.config.server.publicBaseUrl ?? "https://devspace.example.com",
         defaultValue: files.config.server.publicBaseUrl ?? "",
         validate: validateRequiredPublicBaseUrl,
       }));
@@ -257,7 +258,7 @@ async function runInit({ force }: { force: boolean }): Promise<void> {
     const lines = [
       ...(allowedRoots ? [`Project folders: ${allowedRoots.join(", ")}`] : []),
       `Coding Agents: ${selectedProviders.join(", ")}`,
-      ...(publicBaseUrl ? [`ChatGPT connection URL: ${publicBaseUrl}/mcp`] : []),
+      ...(publicBaseUrl ? [`Public DevSpace URL: ${publicBaseUrl}`] : []),
     ];
     prompts.note(lines.join("\n"), "DevSpace is ready");
     if (useChatGpt) {
@@ -356,6 +357,7 @@ async function runDoctor(): Promise<void> {
     const config = loadConfig();
     console.log(`Local MCP URL: http://${config.host}:${config.port}/mcp`);
     console.log(`Public MCP URL: ${new URL("/mcp", config.publicBaseUrl).toString()}`);
+    console.log(`Additional OAuth resources: ${config.oauth.allowedResourceUrls.join(", ") || "none"}`);
     console.log(`Allowed roots: ${config.allowedRoots.join(", ")}`);
     console.log(`Allowed hosts: ${config.allowedHosts.join(", ")}`);
     const providers = buildLocalAgentProviderStatuses(
@@ -381,19 +383,26 @@ function runConfigCommand(args: string[]): void {
   if (subcommand !== "set") {
     throw new Error(`Unknown config command: ${subcommand}`);
   }
-  if (key !== "publicBaseUrl") {
-    throw new Error("Only `devspace config set publicBaseUrl <url|null>` is supported right now.");
+  if (key === "publicBaseUrl") {
+    const value = rest.join(" ").trim();
+    if (!value) throw new Error("Missing publicBaseUrl value.");
+    setDevspaceConfigValue(
+      ["server", "publicBaseUrl"],
+      normalizeOptionalPublicBaseUrl(value),
+    );
+  } else if (key === "oauth.allowedResourceUrls") {
+    if (rest.length === 0) {
+      throw new Error("Missing OAuth resource URL. Pass one or more URLs, or `null` to clear them.");
+    }
+    const values = rest.length === 1 && ["null", "none"].includes(rest[0]!.toLowerCase())
+      ? []
+      : rest.map(normalizeOAuthResourceUrl);
+    setDevspaceConfigValue(["oauth", "allowedResourceUrls"], values);
+  } else {
+    throw new Error(
+      "Supported settings: `publicBaseUrl` and `oauth.allowedResourceUrls`.",
+    );
   }
-
-  const value = rest.join(" ").trim();
-  if (!value) {
-    throw new Error("Missing publicBaseUrl value.");
-  }
-
-  setDevspaceConfigValue(
-    ["server", "publicBaseUrl"],
-    normalizeOptionalPublicBaseUrl(value),
-  );
   console.log(`Updated ${files.configPath}`);
 }
 
@@ -409,6 +418,7 @@ function printHelp(): void {
       "  devspace doctor          Show config, runtime, and native dependency status",
       "  devspace config get      Print persisted config",
       "  devspace config set publicBaseUrl <url|null>",
+      "  devspace config set oauth.allowedResourceUrls <url...|null>",
       "  devspace show-changes <review-ref> [--json]",
       "  devspace agents ls       List subagent sessions",
       "  devspace agents run <profile-or-provider> [--model <model>] [--effort <level>] <prompt>",
@@ -690,6 +700,15 @@ function normalizePublicBaseUrl(value: string): string {
   parsed.search = "";
   parsed.pathname = parsed.pathname.replace(/\/+$/, "");
   return parsed.toString().replace(/\/$/, "");
+}
+
+function normalizeOAuthResourceUrl(value: string): string {
+  const parsed = new URL(value);
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`OAuth resource URL must use http or https: ${value}`);
+  }
+  parsed.hash = "";
+  return parsed.href;
 }
 
 type TextPromptOptions = Omit<Parameters<typeof prompts.text>[0], "validate"> & {
