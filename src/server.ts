@@ -8,7 +8,7 @@ import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from "@modelconte
 import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
-import { checkResourceAllowed, resourceUrlFromServerUrl } from "@modelcontextprotocol/sdk/shared/auth-utils.js";
+import { resourceUrlFromServerUrl } from "@modelcontextprotocol/sdk/shared/auth-utils.js";
 import {
   registerAppResource,
   registerAppTool,
@@ -33,7 +33,7 @@ import {
   sessionIdPrefix,
 } from "./logger.js";
 import { readFileTool } from "./pi-tools.js";
-import { SingleUserOAuthProvider } from "./oauth-provider.js";
+import { OAuthResourcePolicy, SingleUserOAuthProvider } from "./oauth-provider.js";
 import {
   McpSessionRegistry,
   type McpSessionCloseResult,
@@ -722,7 +722,11 @@ export function createServer(
   const transports = new McpSessionRegistry<Transport>();
   const mcpUrl = new URL("/mcp", config.publicBaseUrl);
   const resourceServerUrl = resourceUrlFromServerUrl(mcpUrl);
-  const oauthProvider = new SingleUserOAuthProvider(config.oauth, mcpUrl, config.stateDir);
+  const oauthResourcePolicy = new OAuthResourcePolicy([
+    resourceServerUrl,
+    ...config.oauth.allowedResourceUrls,
+  ]);
+  const oauthProvider = new SingleUserOAuthProvider(config.oauth, oauthResourcePolicy, config.stateDir);
   const bearerAuth = requireBearerAuth({
     verifier: oauthProvider,
     requiredScopes: [config.oauth.scopes[0] ?? "devspace"],
@@ -842,7 +846,7 @@ export function createServer(
     });
     if (res.headersSent) return;
 
-    if (!req.auth?.resource || !checkResourceAllowed({ requestedResource: req.auth.resource, configuredResource: resourceServerUrl })) {
+    if (!oauthResourcePolicy.allows(req.auth?.resource)) {
       logEvent(config.logging, "warn", "auth_denied", {
         requestId,
         method: req.method,

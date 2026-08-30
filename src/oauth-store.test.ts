@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { InvalidGrantError, InvalidTokenError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import { databasePath, openDatabase } from "./db/client.js";
-import { SingleUserOAuthProvider } from "./oauth-provider.js";
+import { OAuthResourcePolicy, SingleUserOAuthProvider } from "./oauth-provider.js";
 import { SqliteOAuthClientsStore, SqliteOAuthStore } from "./oauth-store.js";
 
 const root = await mkdtemp(join(tmpdir(), "devspace-oauth-test-"));
@@ -18,6 +18,8 @@ const oauthConfig = {
   allowedRedirectHosts: ["chatgpt.com"],
 };
 const mcpUrl = new URL("https://agent.example.com/mcp");
+const tunnelMcpUrl = new URL("https://api.openai.com/v1/mcp/tunnel_example");
+const resourcePolicy = new OAuthResourcePolicy([mcpUrl, tunnelMcpUrl]);
 const redirectUri = "https://chatgpt.com/connector_platform_oauth_redirect";
 
 try {
@@ -25,9 +27,19 @@ try {
   testPersistenceAndTokenHashing(join(root, "persistence"));
   testExpiredTokenCleanup(join(root, "expiration"));
   testTransactionalTokenRotation(join(root, "rotation"));
+  testResourcePolicy();
   await testProviderRestartRotationAndRevocation(join(root, "provider"));
 } finally {
   await rm(root, { recursive: true, force: true });
+}
+
+function testResourcePolicy(): void {
+  assert.equal(resourcePolicy.allows(mcpUrl), true);
+  assert.equal(resourcePolicy.allows(tunnelMcpUrl), true);
+  assert.equal(resourcePolicy.allows(new URL(`${tunnelMcpUrl.href}/session`)), true);
+  assert.equal(resourcePolicy.allows(new URL("https://api.openai.com/v1/mcp/other_tunnel")), false);
+  assert.equal(resourcePolicy.allows(new URL("https://untrusted.example.com/mcp")), false);
+  assert.equal(resourcePolicy.allows(undefined), false);
 }
 
 async function testDatabaseConfiguration(stateDir: string): Promise<void> {
@@ -188,7 +200,7 @@ function testTransactionalTokenRotation(stateDir: string): void {
 }
 
 async function testProviderRestartRotationAndRevocation(stateDir: string): Promise<void> {
-  const firstProvider = new SingleUserOAuthProvider(oauthConfig, mcpUrl, stateDir);
+  const firstProvider = new SingleUserOAuthProvider(oauthConfig, resourcePolicy, stateDir);
   const client = await firstProvider.clientsStore.registerClient?.({
     redirect_uris: [redirectUri],
     client_name: "ChatGPT",
@@ -202,7 +214,7 @@ async function testProviderRestartRotationAndRevocation(stateDir: string): Promi
       redirectUri,
       codeChallenge: "challenge",
       scopes: ["devspace"],
-      resource: mcpUrl,
+      resource: tunnelMcpUrl,
     },
     expiresAtMs: Date.now() + 60_000,
   });
@@ -211,27 +223,28 @@ async function testProviderRestartRotationAndRevocation(stateDir: string): Promi
     code,
     undefined,
     redirectUri,
-    mcpUrl,
+    tunnelMcpUrl,
   );
   assert.ok(issued.refresh_token);
   firstProvider.close();
 
-  const secondProvider = new SingleUserOAuthProvider(oauthConfig, mcpUrl, stateDir);
+  const secondProvider = new SingleUserOAuthProvider(oauthConfig, resourcePolicy, stateDir);
   try {
     const verified = await secondProvider.verifyAccessToken(issued.access_token);
     assert.equal(verified.clientId, client.client_id);
+    assert.equal(verified.resource?.href, tunnelMcpUrl.href);
 
     const refreshed = await secondProvider.exchangeRefreshToken(
       client,
       issued.refresh_token,
       ["devspace"],
-      mcpUrl,
+      tunnelMcpUrl,
     );
     assert.ok(refreshed.refresh_token);
     assert.notEqual(refreshed.access_token, issued.access_token);
 
     await assert.rejects(
-      secondProvider.exchangeRefreshToken(client, issued.refresh_token, ["devspace"], mcpUrl),
+      secondProvider.exchangeRefreshToken(client, issued.refresh_token, ["devspace"], tunnelMcpUrl),
       InvalidGrantError,
     );
 
