@@ -17,6 +17,7 @@ export interface OAuthConfig {
   accessTokenTtlSeconds: number;
   refreshTokenTtlSeconds: number;
   scopes: string[];
+  allowedResourceUrls: string[];
   allowedRedirectHosts: string[];
 }
 

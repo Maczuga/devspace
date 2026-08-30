@@ -14,6 +14,7 @@ const oauthConfig = {
   accessTokenTtlSeconds: 3600,
   refreshTokenTtlSeconds: 2592000,
   scopes: ["devspace"],
+  allowedResourceUrls: [],
   allowedRedirectHosts: ["chatgpt.com"],
 };
 const mcpUrl = new URL("https://agent.example.com/mcp");
