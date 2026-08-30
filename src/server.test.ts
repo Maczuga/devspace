@@ -14,6 +14,7 @@ import type { SubagentsConfig } from "./local-agent-config.js";
 import { createReviewCheckpointManager } from "./review-checkpoints.js";
 import { ProcessSessionManager } from "./process-sessions.js";
 import { createMcpServer } from "./server.js";
+import { claudeInstructions } from "./tool-surfaces/claude.js";
 import { SqliteWorkspaceStore } from "./workspace-store.js";
 import { WorkspaceRegistry } from "./workspaces.js";
 import { writeTestDevspaceConfig } from "./test-support/config.test.js";
@@ -46,6 +47,24 @@ test("tool modes expose the expected host-facing tool surface", async (t) => {
       );
     });
   }
+});
+
+test("claude bash contract leaves shell command choice to the model", async (t) => {
+  const instructions = claudeInstructions({ agents: "", skills: "" });
+  assert.match(instructions, /bash for shell commands/);
+  assert.doesNotMatch(instructions, /git inspection|do not create or modify|only for/i);
+
+  const context = await fixture(t, { toolMode: "claude", uiEnabled: false });
+  const tools = await context.client.listTools();
+  const bash = tools.tools.find((tool) => tool.name === "bash");
+  assert.equal(
+    bash?.description,
+    "Run a shell command in a workspace with the local user's authority. Commands are not sandboxed; workspace validation only selects the initial working directory.",
+  );
+  const command = bash?.inputSchema.properties?.command as
+    | { description?: string }
+    | undefined;
+  assert.equal(command?.description, "Shell command to run.");
 });
 
 test("UI metadata is limited to workspace and aggregate review", async (t) => {

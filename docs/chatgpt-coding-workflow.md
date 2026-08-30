@@ -204,13 +204,7 @@ include the parsed summary, file list, and patch.
 
 ## Shell Use
 
-The shell tool is for commands that belong in a terminal:
-
-- tests
-- builds
-- git inspection
-- package scripts
-- environment checks
-
-File writes should go through the edit/write tools rather than shell
-redirection, heredocs, `tee`, `sed -i`, or generated scripts.
+The shell tool runs commands in the workspace with the local user's authority.
+It is not sandboxed; workspace validation only selects its initial working
+directory. The model can choose between shell commands and the dedicated
+read/edit/write tools based on the task.
