@@ -51,16 +51,15 @@ test("tool modes expose the expected host-facing tool surface", async (t) => {
 
 test("claude bash contract leaves shell command choice to the model", async (t) => {
   const instructions = claudeInstructions({ agents: "", skills: "" });
-  assert.match(instructions, /bash for shell commands/);
-  assert.doesNotMatch(instructions, /git inspection|do not create or modify|only for/i);
+  assert.equal(
+    instructions,
+    "Use the available tools as needed to complete the task.",
+  );
 
   const context = await fixture(t, { toolMode: "claude", uiEnabled: false });
   const tools = await context.client.listTools();
   const bash = tools.tools.find((tool) => tool.name === "bash");
-  assert.equal(
-    bash?.description,
-    "Run a shell command in a workspace with the local user's authority. Commands are not sandboxed; workspace validation only selects the initial working directory.",
-  );
+  assert.equal(bash?.description, "Run a shell command in a workspace.");
   const command = bash?.inputSchema.properties?.command as
     | { description?: string }
     | undefined;

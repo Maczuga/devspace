@@ -22,7 +22,7 @@ import {
   textBlock,
 } from "./shared.js";
 
-const CLAUDE_INSTRUCTIONS = `Use ${toolNames.read}, ${toolNames.edit}, and ${toolNames.write} for direct file operations, and ${toolNames.shell} for shell commands. Shell commands run with the local user's authority and are not sandboxed; workspace validation only selects their initial working directory. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.`;
+const CLAUDE_INSTRUCTIONS = "Use the available tools as needed to complete the task.";
 
 export function claudeInstructions({
   agents,
@@ -37,7 +37,7 @@ export function registerClaudeTools(context: ToolRegistrationContext): void {
 }
 
 const CLAUDE_SHELL_DESCRIPTION =
-  "Run a shell command in a workspace with the local user's authority. Commands are not sandboxed; workspace validation only selects the initial working directory.";
+  "Run a shell command in a workspace.";
 
 function registerClaudeMutationTools(context: ToolRegistrationContext): void {
   const { server, config, workspaces } = context;

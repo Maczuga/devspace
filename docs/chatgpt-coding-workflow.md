@@ -204,7 +204,5 @@ include the parsed summary, file list, and patch.
 
 ## Shell Use
 
-The shell tool runs commands in the workspace with the local user's authority.
-It is not sandboxed; workspace validation only selects its initial working
-directory. The model can choose between shell commands and the dedicated
-read/edit/write tools based on the task.
+The shell tool runs commands in the workspace. The model can use it alongside
+the other available tools as needed for the task.
